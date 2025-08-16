@@ -4,10 +4,13 @@ on:
   push:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,24 +29,30 @@ jobs:
         run: |
           IMAGE=ghcr.io/${{ github.repository }}:${{ github.sha }}
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-          docker build -t $IMAGE .
-          docker push $IMAGE
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Deploy to CapRover
+        env:
+          CAPROVER_URL: ${{ secrets.CAPROVER_URL }}
+          CAPROVER_PASSWORD: ${{ secrets.CAPROVER_PASSWORD }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          IMAGE: ${{ env.IMAGE }}
         run: |
-          IMAGE=$IMAGE
-          TOKEN=$(curl -s -X POST "${{ secrets.CAPROVER_URL }}/api/v2/login" \
+          TOKEN=$(curl -s -X POST "$CAPROVER_URL/api/v2/login" \
             -H "Content-Type: application/json" \
-            -d "{\"password\":\"${{ secrets.CAPROVER_PASSWORD }}\"}" | jq -r '.data.token')
+            -d "{\"password\":\"$CAPROVER_PASSWORD\"}" | jq -r '.data.token')
 
           if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
             echo "Falha ao autenticar no CapRover"; exit 1
           fi
 
-          curl -s -X POST "${{ secrets.CAPROVER_URL }}/api/v2/apps/appData/override" \
+          RESP=$(curl -s -X POST "$CAPROVER_URL/api/v2/apps/appData/override" \
             -H "x-captain-auth: $TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"appName\": \"${{ secrets.APP_NAME }}\",
-              \"dockerImageName\": \"$IMAGE\"
-            }"
+            -d "{\"appName\":\"$APP_NAME\",\"dockerImageName\":\"$IMAGE\"}")
+
+          echo "$RESP" | jq .
