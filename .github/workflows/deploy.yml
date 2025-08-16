@@ -32,7 +32,7 @@ jobs:
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
-      - name: Deploy to CapRover (no jq)
+            - name: Deploy to CapRover (update appDefinition)
         env:
           CAPROVER_URL: ${{ secrets.CAPROVER_URL }}      # ex.: http://captain.167-71-70-89.nip.io
           CAPROVER_PASSWORD: ${{ secrets.CAPROVER_PASSWORD }}
@@ -45,20 +45,26 @@ jobs:
           LOGIN_RESP=$(curl -sS -X POST "$CAPROVER_URL/api/v2/login" \
             -H "Content-Type: application/json" \
             -d "{\"password\":\"$CAPROVER_PASSWORD\"}")
-
           echo "Login response: $LOGIN_RESP"
+
           TOKEN=$(echo "$LOGIN_RESP" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
           if [ -z "$TOKEN" ]; then
             echo "❌ Failed to parse token"; exit 1
           fi
 
-          echo "🚀 Deploying image $IMAGE to app $APP_NAME"
-          OVERRIDE_RESP=$(curl -sS -X POST "$CAPROVER_URL/api/v2/apps/appData/override" \
+          echo "🚀 Updating appDefinition for $APP_NAME with image $IMAGE"
+          BODY="{\"appName\":\"$APP_NAME\",\"captainDefinition\":{\"schemaVersion\":2,\"imageName\":\"$IMAGE\"}}"
+          OVERRIDE_RESP=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
+            -X POST "$CAPROVER_URL/api/v2/apps/appDefinitions/update" \
             -H "x-captain-auth: $TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"appName\":\"$APP_NAME\",\"dockerImageName\":\"$IMAGE\"}")
+            -d "$BODY")
 
-          echo "Override response: $OVERRIDE_RESP"
-          echo "$OVERRIDE_RESP" | grep -qi '"status":"ok"' || (echo "❌ CapRover returned non-ok"; exit 1)
+          echo "HTTP code: $OVERRIDE_RESP"
+          echo "Response body:"
+          cat /tmp/resp.json || true
+          echo
+
+          grep -qi '"status":"ok"' /tmp/resp.json || (echo "❌ CapRover returned non-ok"; exit 1)
 
           echo "✅ Deploy requested successfully."
