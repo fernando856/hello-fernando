@@ -1,52 +1,64 @@
-      - name: Deploy to CapRover
+name: CI/CD - Deploy to CapRover
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker image
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Deploy to CapRover (no jq)
         env:
-          CAPROVER_URL: ${{ secrets.CAPROVER_URL }}   # ex: http://captain.167-71-70-89.nip.io
+          CAPROVER_URL: ${{ secrets.CAPROVER_URL }}      # ex.: http://captain.167-71-70-89.nip.io
           CAPROVER_PASSWORD: ${{ secrets.CAPROVER_PASSWORD }}
           APP_NAME: ${{ secrets.APP_NAME }}
           IMAGE: ${{ env.IMAGE }}
         run: |
           set -e
 
-          echo "🔐 Autenticando no CapRover em: $CAPROVER_URL"
-          # Faz login e grava corpo + status separadamente
-          HTTP_CODE=$(curl -sS -o /tmp/login.json -w '%{http_code}' \
-            -X POST "$CAPROVER_URL/api/v2/login" \
+          echo "🔐 Logging in at $CAPROVER_URL"
+          LOGIN_RESP=$(curl -sS -X POST "$CAPROVER_URL/api/v2/login" \
             -H "Content-Type: application/json" \
             -d "{\"password\":\"$CAPROVER_PASSWORD\"}")
 
-          echo "HTTP(login) = $HTTP_CODE"
-          echo "Body(login) ="
-          cat /tmp/login.json || true
-          echo
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ Falha ao autenticar no CapRover (HTTP $HTTP_CODE)"; exit 1
+          echo "Login response: $LOGIN_RESP"
+          TOKEN=$(echo "$LOGIN_RESP" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          if [ -z "$TOKEN" ]; then
+            echo "❌ Failed to parse token"; exit 1
           fi
 
-          TOKEN=$(jq -r '.data.token' /tmp/login.json)
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "❌ Token ausente na resposta de login"; exit 1
-          fi
-
-          echo "🚀 Solicitando deploy da imagem: $IMAGE para app: $APP_NAME"
-          HTTP_CODE=$(curl -sS -o /tmp/override.json -w '%{http_code}' \
-            -X POST "$CAPROVER_URL/api/v2/apps/appData/override" \
+          echo "🚀 Deploying image $IMAGE to app $APP_NAME"
+          OVERRIDE_RESP=$(curl -sS -X POST "$CAPROVER_URL/api/v2/apps/appData/override" \
             -H "x-captain-auth: $TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"appName\":\"$APP_NAME\",\"dockerImageName\":\"$IMAGE\"}")
 
-          echo "HTTP(override) = $HTTP_CODE"
-          echo "Body(override) ="
-          cat /tmp/override.json || true
-          echo
+          echo "Override response: $OVERRIDE_RESP"
+          echo "$OVERRIDE_RESP" | grep -qi '"status":"ok"' || (echo "❌ CapRover returned non-ok"; exit 1)
 
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ Falha ao solicitar deploy (HTTP $HTTP_CODE)"; exit 1
-          fi
-
-          STATUS=$(jq -r '.status // empty' /tmp/override.json)
-          if [ "$STATUS" = "error" ]; then
-            echo "❌ Erro no CapRover:"; cat /tmp/override.json; exit 1
-          fi
-
-          echo "✅ Deploy solicitado com sucesso."
+          echo "✅ Deploy requested successfully."
