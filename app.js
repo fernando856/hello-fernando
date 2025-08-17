@@ -4,4 +4,4 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, {'Content-Type': 'text/plain'});
   res.end('Hello, Fernando!\n');
 });
-server.listen(port, () => console.log(`Server on :${port}`));
+res.end('Hello, Fernando! 🚀 CI/CD funcionando!\n');
