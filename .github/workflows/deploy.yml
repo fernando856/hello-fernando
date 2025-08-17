@@ -54,7 +54,8 @@ jobs:
           fi
 
           echo "🚀 Updating appDefinition for $APP_NAME with image $IMAGE"
-          BODY="{\"appName\":\"$APP_NAME\",\"captainDefinition\":{\"schemaVersion\":2,\"imageName\":\"$IMAGE\"}}"
+          BODY="{\"appName\":\"$APP_NAME\",\"captainDefinition\":{\"schemaVersion\":2,\"imageName\":\"$IMAGE\",\"containerHttpPort\":3000}}"
+
 
           HTTP_CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
             -X POST "$CAPROVER_URL/api/v2/user/apps/appDefinitions/update" \
