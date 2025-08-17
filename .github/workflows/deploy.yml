@@ -66,6 +66,6 @@ jobs:
           echo "Response body:"; cat /tmp/resp.json || true
 
           [ "$HTTP_CODE" = "200" ] || (echo "❌ CapRover HTTP $HTTP_CODE"; exit 1)
-          grep -qi '"status":"ok"' /tmp/resp.json || (echo "❌ CapRover returned non-ok"; exit 1)
+          grep -q '"status":100' /tmp/resp.json || (echo "❌ CapRover returned non-ok"; exit 1)
 
           echo "✅ Deploy requested successfully."
